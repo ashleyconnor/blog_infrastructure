@@ -21,8 +21,8 @@ resource "aws_route53_record" "apex" {
   type    = "A"
 
   alias {
-    name                   = "d1vwtlvs1uxsfa.cloudfront.net"
-    zone_id                = "Z2FDTNDATAQYW2"
+    name                   = aws_cloudfront_distribution.cloudfront-dist["ashleyconnor"].domain_name
+    zone_id                = aws_cloudfront_distribution.cloudfront-dist["ashleyconnor"].hosted_zone_id
     evaluate_target_health = false
   }
 }
@@ -31,8 +31,11 @@ resource "aws_route53_record" "til" {
   zone_id = aws_route53_zone.primary.zone_id
   name    = "til.ashleyconnor.co.uk"
   type    = "A"
-  ttl     = "300"
-  records = ["1.1.1.1"]
+  alias {
+    name                   = aws_cloudfront_distribution.cloudfront-dist["til-ashleyconnor"].domain_name
+    zone_id                = aws_cloudfront_distribution.cloudfront-dist["til-ashleyconnor"].hosted_zone_id
+    evaluate_target_health = false
+  }
 }
 
 resource "aws_s3_bucket" "ashleyconnor" {
@@ -96,10 +99,22 @@ locals {
   s3_origin_id = "Custom-${aws_s3_bucket.ashleyconnor.website_endpoint}"
 }
 
-resource "aws_cloudfront_distribution" "ashleyconnor-cloudfront" {
+resource "aws_cloudfront_distribution" "cloudfront-dist" {
+  for_each = {
+    ashleyconnor = {
+      aliases = ["ashleyconnor.co.uk"]
+      origin_path = null
+      logging_prefix = "cdn/"
+    },
+    til-ashleyconnor = {
+      aliases = ["til.ashleyconnor.co.uk"]
+      origin_path = "/til"
+      logging_prefix = "cdn/til/"
+    }
+  }
   enabled = true
   default_root_object = "index.html"
-  aliases = ["ashleyconnor.co.uk"]
+  aliases = each.value.aliases
 
   viewer_certificate {
     acm_certificate_arn = data.aws_acm_certificate.ashleyconnor-wildcard-cert.arn
@@ -135,12 +150,13 @@ resource "aws_cloudfront_distribution" "ashleyconnor-cloudfront" {
   logging_config {
     bucket          = "logs.ashleyconnor.co.uk.s3.amazonaws.com"
     include_cookies = false
-    prefix          = "cdn/"
+    prefix          = each.value.logging_prefix
   }
 
   origin {
     domain_name = aws_s3_bucket.ashleyconnor.website_endpoint
     origin_id   = local.s3_origin_id
+    origin_path = each.value.origin_path
 
     custom_origin_config {
       http_port                = 80
